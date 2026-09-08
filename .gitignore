@@ -1,0 +1,93 @@
+# ============================================
+# Got Skills CRM Platform
+# ============================================
+
+
+# --------------------------------------------
+# Node.js / React dependencies
+# --------------------------------------------
+
+node_modules/
+
+
+# --------------------------------------------
+# Build output
+# --------------------------------------------
+
+build/
+dist/
+
+
+# --------------------------------------------
+# React / development caches
+# --------------------------------------------
+
+.cache/
+coverage/
+
+
+# --------------------------------------------
+# Environment variables and secrets
+# --------------------------------------------
+
+.env
+.env.*
+!.env.example
+
+
+# --------------------------------------------
+# Log files
+# --------------------------------------------
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+
+# --------------------------------------------
+# Local MongoDB data and database backups
+# --------------------------------------------
+
+# MongoDB files are local data/backups and should
+# not be stored in the GitHub source repository.
+mongodb/
+
+# Additional protection against accidentally
+# committing MongoDB compressed backup files.
+*.gz
+
+
+# --------------------------------------------
+# Operating system files
+# --------------------------------------------
+
+.DS_Store
+Thumbs.db
+
+
+# --------------------------------------------
+# Editor / IDE files
+# --------------------------------------------
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+*~
+
+
+# --------------------------------------------
+# Temporary files
+# --------------------------------------------
+
+*.tmp
+*.temp
+
+# Local archives / packaged project copies
+*.zip
+
+# Stray parent-level React lockfile
+javascript/react/package-lock.json
+
