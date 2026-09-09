@@ -517,3 +517,423 @@ The codebase contains separate Node.js backend and React frontend repositories m
 **Benjamin Klass**
 
 Full-stack development work involving React, Node.js, Express, MongoDB, REST APIs, authentication, CRM-style data management, and payment/customer integration.
+## Payment Invoice and Receipt Downloads
+
+The Payments page now provides direct access to the PDF invoice and receipt associated with each payment record.
+
+Two action columns have been added to the reusable `PaymentsTable`:
+
+- **Download Invoice**
+- **Download Receipt**
+
+The previous generic **View** action was removed because the document-specific actions provide clearer navigation.
+
+### Document Download Architecture
+
+The two document types intentionally use different identifiers:
+
+- An **invoice** belongs to an enrollment, so the Payments table passes `payment.enrollmentId`.
+- A **receipt** represents a specific payment transaction, so the Payments table passes `payment._id`.
+
+```text
+Payments page
+     |
+     v
+PaymentsTable
+     |
+     +---------------------------+
+     |                           |
+     v                           v
+Download Invoice          Download Receipt
+     |                           |
+payment.enrollmentId          payment._id
+     |                           |
+     v                           v
+/enrollmentPrint           /receiptPrint
+     |                           |
+     v                           v
+enrollmentPrint.jsx        receiptPrint.jsx
+     |                           |
+     v                           v
+getEnrollment(id)          getPayment(paymentId)
+     |                           |
+     v                           v
+Enrollment                 Payment
+     |                           |
+     +---- getCustomer()         |
+     +---- getProduct()          |
+     |                           |
+     v                           v
+invoiceData                 receiptData
+     |                           |
+     v                           v
+Invoice PDF                 Receipt PDF
+     |                           |
+     +---- PDFViewer             +---- PDFViewer
+     +---- PDFDownloadLink       +---- PDFDownloadLink
+```
+
+### Payments Table Links
+
+The Invoice action passes only the enrollment ID:
+
+```javascript
+{
+  key: "downloadInvoice",
+  label: "Download Invoice",
+  sortable: false,
+  content: (payment) => (
+    <Link
+      className="font-weight-bold btn btn-sm btn-success"
+      to={{
+        pathname: "/enrollmentPrint",
+        state: {
+          enrollmentId: payment.enrollmentId,
+        },
+      }}
+    >
+      Download Invoice
+    </Link>
+  ),
+}
+```
+
+The Receipt action passes the ID of the exact payment row:
+
+```javascript
+{
+  key: "downloadReceipt",
+  label: "Download Receipt",
+  sortable: false,
+  content: (payment) => (
+    <Link
+      className="font-weight-bold btn btn-sm btn-success"
+      to={{
+        pathname: "/receiptPrint",
+        state: {
+          paymentId: payment._id,
+        },
+      }}
+    >
+      Download Receipt
+    </Link>
+  ),
+}
+```
+
+Using `payment._id` for receipts is important because it identifies one exact payment transaction rather than merely identifying the enrollment or student.
+
+### Invoice Page Refactor
+
+`enrollmentPrint.jsx` was refactored so that it no longer depends on the Completion Form passing a complete view-model object through React Router state.
+
+The page now receives an `enrollmentId` and retrieves the data it requires itself:
+
+```text
+enrollmentId
+     |
+     v
+getEnrollment(enrollmentId)
+     |
+     v
+Enrollment
+     |
+     +-------------------+
+     |                   |
+     v                   v
+customer._id          product._id
+     |                   |
+     v                   v
+getCustomer()         getProduct()
+     |                   |
+     +---------+---------+
+               |
+               v
+          invoiceData
+               |
+               v
+           Invoice PDF
+```
+
+The main retrieval logic is conceptually:
+
+```javascript
+const locationState = this.props.location.state || {};
+const enrollmentId = locationState.enrollmentId;
+
+const { data: enrollment } = await getEnrollment(enrollmentId);
+
+const [{ data: student }, { data: product }] = await Promise.all([
+  getCustomer(enrollment.customer._id),
+  getProduct(enrollment.product._id),
+]);
+
+this.setState({
+  enrollment,
+  student,
+  product,
+});
+```
+
+Once the records are available, the component constructs `invoiceData` and passes it to the existing React PDF components:
+
+```jsx
+<PDFViewer width={800} height={1100}>
+  <Invoice invoice={invoiceData} />
+</PDFViewer>
+
+<PDFDownloadLink
+  document={<Invoice invoice={invoiceData} />}
+  fileName="document.pdf"
+>
+  {({ loading }) =>
+    loading ? "Loading document..." : "Download"
+  }
+</PDFDownloadLink>
+```
+
+This makes the Invoice page more self-contained and allows it to be opened from both the Payments table and the existing enrollment workflow.
+
+### Receipt Page Refactor
+
+`receiptPrint.jsx` now supports two navigation paths.
+
+When opened from the Payments table, it receives a `paymentId` and retrieves the exact payment:
+
+```javascript
+response = await getPayment(locationState.paymentId);
+```
+
+When opened from the existing Completion Form, it can still receive an `enrollmentId`:
+
+```javascript
+response = await getPaymentByEnrollmentId(
+  locationState.enrollmentId
+);
+```
+
+The combined logic is:
+
+```javascript
+if (locationState.paymentId) {
+  response = await getPayment(locationState.paymentId);
+} else if (locationState.enrollmentId) {
+  response = await getPaymentByEnrollmentId(
+    locationState.enrollmentId
+  );
+} else {
+  toast.error("Missing payment information.");
+  return;
+}
+```
+
+The retrieved Payment is transformed into `receiptData` and passed to the existing `Receipt` PDF component.
+
+### Completion Form Compatibility
+
+The existing Completion Form Invoice and Receipt buttons were updated to pass identifiers instead of copying the entire form state.
+
+Invoice:
+
+```javascript
+state: {
+  enrollmentId: this.state.data._id,
+}
+```
+
+Receipt:
+
+```javascript
+state: {
+  enrollmentId: this.state.data._id,
+}
+```
+
+The existing business rule remains in place: the Completion Form only displays its Receipt button when `enrollmentPaid === true`.
+
+### Payment Table Sorting
+
+The new document columns are actions rather than data fields and therefore should not be sortable.
+
+They use:
+
+```javascript
+sortable: false
+```
+
+The shared `TableHeader` component was updated to respect this property:
+
+```jsx
+<th
+  className={column.sortable === false ? "" : "clickable"}
+  key={column.path || column.key}
+  onClick={() =>
+    column.sortable !== false && this.raiseSort(column.path)
+  }
+>
+  {column.label} {this.renderSortIcon(column)}
+</th>
+```
+
+The Course column sorting path was also corrected from `enrollment` to the actual displayed payment field:
+
+```javascript
+path: "productCode"
+```
+
+As a result, normal payment data columns remain sortable while **Download Invoice** and **Download Receipt** are non-sortable action columns.
+
+## Testing the Invoice and Receipt Download Feature
+
+The feature was tested using both the React interface and MongoDB records.
+
+### Verify a Specific Payment
+
+A known payment can be inspected directly in `mongosh`:
+
+```javascript
+db.payments.findOne({
+  _id: ObjectId("64e30a399107cf006c530bbf")
+})
+```
+
+The returned record can then be compared with the Receipt opened from the corresponding Payments-table row.
+
+Relevant fields include:
+
+- `_id`
+- `enrollmentId`
+- `customerId`
+- `name`
+- `productCode`
+- `productInvoice`
+- `productDescription`
+- `grossAmount`
+- `transactionDate`
+- `spTransactionId`
+- `serviceProvider`
+- `isFullPayment`
+
+### Verify the Corresponding Enrollment
+
+Using the payment's `enrollmentId`, the related enrollment can be inspected:
+
+```javascript
+db.enrollments.findOne({
+  _id: ObjectId("ENROLLMENT_ID")
+})
+```
+
+The enrollment's customer, product, dates, fee, and payment status can then be compared with the Invoice opened from that payment row.
+
+### Multiple Payments for the Same Student
+
+Customers with multiple payments can be found with:
+
+```javascript
+db.payments.aggregate([
+  {
+    $group: {
+      _id: "$customerId",
+      paymentCount: { $sum: 1 }
+    }
+  },
+  {
+    $match: {
+      paymentCount: { $gt: 1 }
+    }
+  },
+  {
+    $sort: {
+      paymentCount: -1
+    }
+  }
+])
+```
+
+Each payment row should open the receipt for that exact transaction.
+
+### Multiple Payments for One Enrollment
+
+A further edge-case test checks whether any enrollment has more than one Payment record:
+
+```javascript
+db.payments.aggregate([
+  {
+    $group: {
+      _id: "$enrollmentId",
+      paymentCount: { $sum: 1 },
+      paymentIds: { $push: "$_id" }
+    }
+  },
+  {
+    $match: {
+      paymentCount: { $gt: 1 }
+    }
+  }
+])
+```
+
+If multiple payments exist for one enrollment, the Payments-table Receipt links should still produce distinct receipts because each row passes its own `payment._id` to `getPayment(paymentId)`.
+
+### Regression and Error Tests
+
+The document feature should also be checked for the following scenarios:
+
+| Scenario | Expected Behaviour |
+| --- | --- |
+| Different payment rows | Each row opens its own documents |
+| Download Invoice | Correct enrollment invoice displayed |
+| Download Receipt | Correct individual payment receipt displayed |
+| Completion Form Invoice | Existing invoice workflow still works |
+| Completion Form Receipt | Existing paid-enrollment receipt workflow still works |
+| PDF Download | Downloaded PDF matches the PDFViewer document |
+| Missing `enrollmentId` | Invoice page reports missing information rather than crashing |
+| Missing payment information | Receipt page reports missing information rather than crashing |
+| Invalid/nonexistent ID | API error is handled cleanly |
+| Course column | Sorts using `productCode` |
+| Download Invoice header | Non-sortable |
+| Download Receipt header | Non-sortable |
+
+## Updated Payment Document Request Lifecycle
+
+The newly-added feature exercises a broader full-stack/document-generation lifecycle:
+
+```text
+Payment row
+    |
+    +-----------------------+
+    |                       |
+    v                       v
+enrollmentId             paymentId
+    |                       |
+    v                       v
+React Router state       React Router state
+    |                       |
+    v                       v
+enrollmentPrint.jsx      receiptPrint.jsx
+    |                       |
+    v                       v
+Frontend service         Frontend service
+    |                       |
+    v                       v
+Express API              Express API
+    |                       |
+    v                       v
+Mongoose                 Mongoose
+    |                       |
+    v                       v
+MongoDB Enrollment       MongoDB Payment
+    |                       |
+    v                       v
+PDF data object          PDF data object
+    |                       |
+    v                       v
+PDFViewer                PDFViewer
+    |                       |
+    v                       v
+PDFDownloadLink          PDFDownloadLink
+```
+
+This implementation demonstrates reuse of existing application components, identifier-based navigation, API retrieval, MongoDB relationships, React state management, and client-side PDF generation.
+
