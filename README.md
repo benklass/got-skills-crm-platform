@@ -1,6 +1,6 @@
 # Got Skills
 
-Got Skills is a full-stack web application for managing students, course enrollments, products/courses, users, and payments.
+Got Skills is a full-stack CRM web application for managing students, courses, enrollments, payments, and related calendar activity.
 
 The application uses a React frontend connected to a Node.js/Express REST API and MongoDB database. It provides a CRM-style interface for managing student records and the relationships between customers, enrollments, courses, and payment transactions.
 
@@ -50,7 +50,7 @@ Payment loading and API errors are handled separately from the main student reco
 
 ### Enrollments
 
-The application manages student enrollments and connects payment records to enrollments.
+The application manages student enrollments and connects payment records to enrollments. Existing student record pages also display the enrollments associated with that student, using the student’s customer ID.
 
 Payment records contain an `enrollmentId`, allowing payment and invoice information to be associated with the appropriate enrollment.
 
@@ -106,6 +106,8 @@ The Express backend validates the token through authentication middleware before
 - Lodash
 - React Toastify
 - Font Awesome
+- React Big Calendar and Moment.js (calendar views and date localization)
+- React PDF (`@react-pdf/renderer`) for invoice and receipt viewing/downloads
 
 ### Backend
 
@@ -393,7 +395,7 @@ Got Skills
                 +-- config/
 ```
 
-The parent repository tracks the frontend and backend repositories as Git submodules.
+The parent repository tracks the frontend and backend repositories as Git submodules. Commit frontend changes in the frontend repository and push its current branch before updating and committing the parent repository’s submodule reference.
 
 ## Running the Application
 
@@ -443,7 +445,7 @@ Install dependencies:
 npm install
 ```
 
-Start the React development application using the script configured in `package.json`.
+Start the React development application using the script configured in `package.json` (typically `npm start`). The development frontend normally runs at `http://localhost:3000`. Configure the backend connection and authentication environment according to the existing project setup.
 
 ## Testing the Customer Payment Feature
 
@@ -505,6 +507,67 @@ Potential future improvements include:
 - Pagination for customers with large payment histories
 - Further modernization of older React class components where appropriate
 - Additional documentation of the enrollment and payment workflows
+- Automated tests for calendar date-range totals and record navigation
+
+## Student Record Enrollment History
+
+The existing student/customer record page displays enrollments belonging to that student, alongside the student details and related payment history. The frontend retrieves records by customer ID through `getEnrollmentsByCustomerId(customerId)`, backed by `GET /api/enrollments/customer/:customerId`. Enrollment records embed customer information, so the backend matches `customer._id` to the requested customer ID. The list provides access to the corresponding enrollment records.
+
+## Dynamic CRM Calendar
+
+The Calendar page (`/calendar`) is implemented in `src/components/calendar.jsx`, registered in `src/App.js`, and linked from `src/components/navBar.jsx`. It retrieves courses, payments, and **all** enrollments through the existing frontend service modules and displays them in React Big Calendar. Using all enrollments ensures that completed or paid enrollments are not omitted merely because of their status.
+
+### Event categories and dates
+
+| Category | Source record and date | Event title | Color | Record link |
+| --- | --- | --- | --- | --- |
+| Course | Product `startDate`–`endDate` | Course name and instructor name | Blue | `/products/:id` |
+| Payment | Payment `transactionDate` | Payment, student name, and course code when available | Green | `/receiptPrint?paymentId=:id` |
+| Enrollment | Enrollment `enrollmentDate` | Enrollment, student name, and course name when available | Yellow | `/enrollments/:id` |
+
+Course records are represented as date-range events; payment and enrollment records are single-date events. The event objects retain the source record ID and type for navigation and display. Titles and color coding both identify event types, rather than relying on color alone.
+
+### View-dependent summary totals
+
+The four summary cards display **Courses**, **Payments**, **Enrollments**, and **Total Calendar Events** for the selected calendar view:
+
+| View | Counting period |
+| --- | --- |
+| Month | Selected calendar month |
+| Week | Selected calendar week, using the calendar's configured week start |
+| Day | Selected day |
+| Agenda | Agenda date range (30 days in the current implementation) |
+
+A course counts **once per displayed period** if its start/end range overlaps that period. For example, a course spanning September and October contributes once to each month's totals and once to each overlapping week; it is counted on each active day in Day view. Payments count by transaction date and enrollments by enrollment date. The combined total is the sum of the three category totals. The calendar still renders the retrieved event collection; switching views changes the summary period, not the underlying records.
+
+### Event details and navigation
+
+Selecting a calendar event opens a color-coded details pop-up. The pop-up provides a link to its source CRM record in a **new browser tab**, leaving the calendar open. Course and enrollment links open their respective record pages. Payment links open the **specific payment receipt**, not the general Payments list.
+
+The receipt page accepts a direct URL containing the payment ID, for example:
+
+```text
+/receiptPrint?paymentId=PAYMENT_OBJECT_ID
+```
+
+`receiptPrint.jsx` reads the query parameter and retrieves the corresponding payment through `getPayment(paymentId)`. It also retains the existing React Router `location.state` paths used by the Payments table (`paymentId`) and Completion Form (`enrollmentId`, resolved with `getPaymentByEnrollmentId`). The existing PDF viewer and download link are reused.
+
+### Loading and error handling
+
+The Calendar page distinguishes loading, empty, success, and request-error states. Category-specific retrieval failures are reported without requiring the entire calendar page to crash. Event dates must be valid to contribute to the summary totals.
+
+### Calendar verification checklist
+
+- Switch between Month, Week, Day, and Agenda and compare the summary period and counts with the displayed dates.
+- Check a course crossing month/week boundaries; confirm it counts once in each overlapping period.
+- Confirm a course appears on each applicable day in Day view without being counted twice within a single day.
+- Check payment and enrollment totals against their transaction and enrollment dates.
+- Verify event titles include the instructor or student name and event colors remain consistent across views.
+- Open each event type's pop-up and confirm the record link opens in a new tab.
+- Confirm a payment event opens the correct receipt and the existing Payments-table and Completion Form receipt paths still work.
+- Check empty datasets, missing/invalid dates, and an API failure in one category.
+
+These are recommended regression checks; this README does not claim they are automated tests.
 
 ## Repository
 
@@ -936,4 +999,8 @@ PDFDownloadLink          PDFDownloadLink
 ```
 
 This implementation demonstrates reuse of existing application components, identifier-based navigation, API retrieval, MongoDB relationships, React state management, and client-side PDF generation.
+
+### Direct receipt links from Calendar events
+
+In addition to the React Router state navigation described above, the Calendar can open a receipt in a new tab using `/receiptPrint?paymentId=PAYMENT_OBJECT_ID`. The receipt page reads the payment ID from the query string when no payment ID is supplied in router state. This allows direct navigation to a specific receipt without first opening the Payments list.
 
