@@ -1,0 +1,5 @@
+{
+  "jwtPrivateKey": "",
+  "db": "@localhost:27017/packs",
+  "mongodb_user": ""
+}

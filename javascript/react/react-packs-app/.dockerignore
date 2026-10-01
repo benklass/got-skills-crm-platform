@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+build
+.git
+*.md
+.gitignore
+setup.sh
+release-packs-app-dokcer.sh
+DockerFile

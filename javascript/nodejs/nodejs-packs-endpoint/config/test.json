@@ -1,0 +1,7 @@
+
+{
+    "jwtPrivateKey" : "1234",
+    "db" : "",
+    "mongodb_user" : "a",
+    "mongodb_password" : "a"
+}

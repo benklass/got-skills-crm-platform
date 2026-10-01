@@ -1,0 +1,5 @@
+{
+  "jwtPrivateKey": "packs_jwtPrivateKey",
+  "mongodb_user": "mongodb_user",
+  "db": "db"
+}

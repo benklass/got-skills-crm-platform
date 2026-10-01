@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+coverage
+examples
+tests
+jest.config.jest
+readme.md 
+setup.sh 
